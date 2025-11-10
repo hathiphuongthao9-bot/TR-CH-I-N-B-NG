@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Nổ Bóng - Cái bát xinh xinh (Không cần nhập, có giọng đọc)</title>
+  <style>
+    :root{--bg:#fff0f6;--accent:#d81b60;--ball1:#ffd1e8;--ball2:#ffd7b5;--ball3:#d6f5d6}
+    *{box-sizing:border-box;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial}
+    body{margin:0;background:linear-gradient(180deg,var(--bg),#ffffff);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:18px}
+    .stage{width:100%;max-width:980px;background:#fff;border-radius:16px;box-shadow:0 12px 30px rgba(20,20,60,0.08);position:relative;padding:18px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+    h1{font-size:20px;margin:0;color:var(--accent)}
+    .controls{display:flex;gap:8px}
+    .btn{background:var(--accent);color:white;border:none;padding:8px 12px;border-radius:10px;cursor:pointer}
+    .board{height:520px;position:relative;display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:center;gap:18px;padding-top:12px}
+    .balloon{width:110px;height:140px;border-radius:58% 58% 48% 48%/70% 70% 35% 35%;display:flex;align-items:center;justify-content:center;color:#333;font-weight:700;cursor:pointer;box-shadow:0 10px 22px rgba(10,10,30,0.08);transition:transform .25s ease,opacity .3s ease}
+    .balloon.pop{transform:scale(1.4) rotate(-8deg);opacity:0}
+    .stats{position:absolute;left:18px;bottom:18px;background:rgba(255,255,255,0.95);padding:8px 12px;border-radius:10px;box-shadow:0 8px 20px rgba(10,10,30,0.06)}
+    #musicControl{position:absolute;right:18px;bottom:18px}
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);visibility:hidden;opacity:0;transition:opacity .12s ease}
+    .modal.show{visibility:visible;opacity:1}
+    .card{background:white;padding:18px;border-radius:12px;max-width:640px;width:92%;text-align:left}
+    .question{font-size:18px;margin-bottom:10px;color:#222}
+    .modalControls{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+    .small{font-size:13px;color:#666}
+    #bowl{position:absolute;right:18px;bottom:70px;width:120px}
+    @media (max-width:600px){.board{gap:12px}.balloon{width:86px;height:110px}}
+  </style>
+</head>
+<body>
+  <div class="stage" role="application">
+    <header>
+      <h1>Bài thơ: Cái bát xinh xinh</h1>
+      <div class="controls">
+        <button id="resetBtn" class="btn">🔄 Làm lại</button>
+        <button id="voiceToggle" class="btn">🔈 Giọng đọc: Bật</button>
+      </div>
+    </header>
+
+    <div class="board" id="board" aria-live="polite">
+      <!-- balloons injected -->
+    </div>
+
+    <div class="stats">
+      Đã nổ: <span id="popped">0</span>/6 — Điểm: <span id="score">0</span>
+      <div class="small">Nhấn vào bóng để nổ → máy đọc sẽ đọc câu hỏi → giáo viên/ trẻ trả lời bằng miệng → nhấn Đúng/Sai.</div>
+    </div>
+
+    <img id="bowl" src="https://i.ibb.co/NnSgk2Z/cai-bat.png" alt="Cái bát" />
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="card" role="dialog" aria-modal="true">
+      <div class="question" id="questionText">Câu hỏi sẽ hiện ở đây</div>
+      <div class="small" id="speechNote">(Máy sẽ đọc to câu hỏi)</div>
+      <div class="modalControls">
+        <button id="correctBtn" class="btn">✅ Đúng</button>
+        <button id="wrongBtn" class="btn" style="background:#888">❌ Sai</button>
+        <button id="nextBtn" class="btn" style="background:#6C8EF5">Tiếp</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="bgMusic" loop>
+    <source src="https://cdn.pixabay.com/audio/2021/11/16/audio_2d4f1f8a8a.mp3" type="audio/mpeg">
+  </audio>
+
+  <script>
+    // Các câu hỏi theo yêu cầu
+    const questions = [
+      'Bố mẹ của bé làm việc ở đâu?',
+      'Bố mẹ mang về cho bé cái gì?',
+      'Cái bát của bé đẹp như thế nào?',
+      'Theo con, cái bát được làm từ chất liệu gì?',
+      'Câu thơ nào nói về chất liệu làm ra cái bát?',
+      'Ai đã làm ra chiếc bát đẹp cho bé?',
+      'Em bé đã giữ gìn cái bát như thế nào?'
+    ];
+
+    // Tạo 6 bóng (nếu hơn 6 câu thì lấy 6 đầu)
+    const total = 6;
+    const board = document.getElementById('board');
+    const modal = document.getElementById('modal');
+    const questionText = document.getElementById('questionText');
+    const poppedSpan = document.getElementById('popped');
+    const scoreSpan = document.getElementById('score');
+    const resetBtn = document.getElementById('resetBtn');
+    const voiceToggle = document.getElementById('voiceToggle');
+    const correctBtn = document.getElementById('correctBtn');
+    const wrongBtn = document.getElementById('wrongBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const bgMusic = document.getElementById('bgMusic');
+
+    let popped = 0, score = 0, currentIndex = null;
+    let voiceOn = true;
+
+    // Simple audio via WebAudio for pop & applause
+    let audioCtx = null;
+    function ensureAudio(){ if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    function playPop(){ ensureAudio(); const len = audioCtx.sampleRate * 0.04; const buffer = audioCtx.createBuffer(1,len,audioCtx.sampleRate); const d = buffer.getChannelData(0); for(let i=0;i<len;i++) d[i] = (Math.random()*2-1)*Math.exp(-i/300); const s = audioCtx.createBufferSource(); s.buffer=buffer; const g=audioCtx.createGain(); g.gain.value=0.8; s.connect(g).connect(audioCtx.destination); s.start(); }
+    function playApplause(){ ensureAudio(); const now=audioCtx.currentTime; for(let i=0;i<14;i++){ const o=audioCtx.createOscillator(); const g=audioCtx.createGain(); o.type='triangle'; o.frequency.value=220+Math.random()*600; g.gain.value=0.12*Math.random(); o.connect(g).connect(audioCtx.destination); o.start(now + i*0.03); o.stop(now + i*0.03 + 0.08 + Math.random()*0.03); }}
+    function playWrong(){ ensureAudio(); const o=audioCtx.createOscillator(); const g=audioCtx.createGain(); o.type='sawtooth'; o.frequency.value=160; g.gain.value=0.06; o.connect(g).connect(audioCtx.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.5); o.stop(audioCtx.currentTime+0.5); }
+
+    function createBalloon(i){ const b=document.createElement('div'); b.className='balloon'; b.style.background = i%3===0? 'linear-gradient(180deg,var(--ball1),#ffc1e3)': i%3===1? 'linear-gradient(180deg,var(--ball2),#ffe0b2)': 'linear-gradient(180deg,var(--ball3),#bfffbf)'; b.textContent = 'BÓNG ' + (i+1); b.dataset.index = i; b.addEventListener('click', onBalloonClick); board.appendChild(b); }
+
+    function onBalloonClick(e){ const b=e.currentTarget; const idx = +b.dataset.index; if(b.classList.contains('pop')) return; b.classList.add('pop'); playPop(); setTimeout(()=>{ currentIndex = idx; showQuestion(idx); },240); popped++; poppedSpan.textContent = popped + '/' + total; }
+
+    function showQuestion(idx){ const q = questions[idx] || 'Câu hỏi...'; questionText.textContent = q; modal.classList.add('show'); // đọc bằng Web Speech API
+      if(voiceOn && 'speechSynthesis' in window){ const u = new SpeechSynthesisUtterance(q); u.lang = 'vi-VN'; // chọn giọng hệ thống
+        // try prefer a female voice if available
+        const voices = speechSynthesis.getVoices(); if(voices && voices.length){ const v = voices.find(v=>/female|woman|vietnamese|vi-/i.test(v.name) || /vi-/.test(v.lang)); if(v) u.voice = v; }
+        speechSynthesis.cancel(); // stop previous
+        // some browsers need a user gesture before speak; ensureAudio triggered by click already
+        setTimeout(()=>speechSynthesis.speak(u),80);
+      }
+    }
+
+    correctBtn.addEventListener('click', ()=>{ score++; scoreSpan.textContent = score; playApplause(); modal.classList.remove('show'); });
+    wrongBtn.addEventListener('click', ()=>{ playWrong(); modal.classList.remove('show'); });
+    nextBtn.addEventListener('click', ()=>{ modal.classList.remove('show'); });
+
+    resetBtn.addEventListener('click', resetAll);
+    voiceToggle.addEventListener('click', ()=>{ voiceOn = !voiceOn; voiceToggle.textContent = voiceOn? '🔈 Giọng đọc: Bật' : '🔇 Giọng đọc: Tắt'; if(!voiceOn) speechSynthesis.cancel(); });
+
+    // music control: double click on voiceToggle to play bg music
+    voiceToggle.addEventListener('dblclick', ()=>{ if(bgMusic.paused){ bgMusic.play().catch(()=>{}); voiceToggle.textContent = '🎵 Nhạc: Đang phát'; } else{ bgMusic.pause(); voiceToggle.textContent = voiceOn? '🔈 Giọng đọc: Bật' : '🔇 Giọng đọc: Tắt'; } });
+
+    function resetAll(){ board.innerHTML=''; popped=0; score=0; poppedSpan.textContent = popped + '/' + total; scoreSpan.textContent = score; for(let i=0;i<total;i++) createBalloon(i); modal.classList.remove('show'); }
+
+    // init
+    resetAll();
+
+    // accessibility: numeric keys 1-6
+    document.addEventListener('keydown', (e)=>{ if(e.key >= '1' && e.key <= String(total)){ const idx=Number(e.key)-1; const b=board.querySelector(`.balloon[data-index='${idx}']`); if(b) b.click(); } });
+  </script>
+</body>
+</html>
